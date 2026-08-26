@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MangaX — Manga reader system</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fraunces:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin: 0; background: #f0eee9; }
+  body { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="shared.jsx"></script>
+<script type="text/babel" src="desktop-frames.jsx"></script>
+<script type="text/babel" src="desktop-frames-2.jsx"></script>
+<script type="text/babel" src="mobile-frames.jsx"></script>
+<script type="text/babel" src="account-frames.jsx"></script>
+<script type="text/babel" src="reader-frames.jsx"></script>
+<script type="text/babel" src="monetization-frames.jsx"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent": "crimson",
+  "font": "mono",
+  "density": "comfy"
+}/*EDITMODE-END*/;
+
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+  return (
+    <>
+      <DesignCanvas>
+        <DCSection id="home" title="Home" subtitle="Dark + crimson · vertical webtoon reader · power-user filters">
+          <DCArtboard id="home-d" label="Home · Desktop 1440" width={1440} height={2400}>
+            <HomeDesktop tweaks={t}/>
+          </DCArtboard>
+          <DCArtboard id="home-m" label="Home · Mobile 390" width={390} height={844}>
+            <HomeMobile tweaks={t}/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="browse" title="Browse" subtitle="Tag chips, sticky filter rail, density toggle">
+          <DCArtboard id="browse-d" label="Browse · Desktop" width={1440} height={1700}>
+            <BrowseDesktop tweaks={t}/>
+          </DCArtboard>
+          <DCArtboard id="browse-m" label="Browse · Mobile" width={390} height={844}>
+            <BrowseMobile tweaks={t}/>
+          </DCArtboard>
+          <DCArtboard id="browse-m-filters" label="Mobile · Filter sheet" width={390} height={844}>
+            <BrowseFiltersMobile tweaks={t}/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="series" title="Series detail" subtitle="Hero banner, chapter list, side rail of details">
+          <DCArtboard id="series-d" label="Series · Desktop" width={1440} height={1780}>
+            <SeriesDesktop tweaks={t}/>
+          </DCArtboard>
+          <DCArtboard id="series-m" label="Series · Mobile" width={390} height={1400}>
+            <SeriesMobile tweaks={t}/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="reader" title="Reader" subtitle="Vertical webtoon scroll · immersive auto-hiding chrome">
+          <DCArtboard id="reader-d" label="Reader · Desktop (chrome on)" width={1440} height={5020}>
+            <ReaderDesktop tweaks={t} chromeVisible/>
+          </DCArtboard>
+          <DCArtboard id="reader-m" label="Reader · Mobile (chrome on)" width={390} height={844}>
+            <ReaderMobile tweaks={t} chromeVisible/>
+          </DCArtboard>
+          <DCArtboard id="reader-m-imm" label="Reader · Mobile (immersive)" width={390} height={844}>
+            <ReaderMobile tweaks={t} chromeVisible={false}/>
+          </DCArtboard>
+          <DCArtboard id="reader-m-settings" label="Reader settings · Mobile" width={390} height={844}>
+            <ReaderSettingsMobile tweaks={t}/>
+          </DCArtboard>
+          <DCArtboard id="reader-m-end" label="End of chapter · seamless continue" width={390} height={844}>
+            <ReaderEndChapterMobile tweaks={t} startAtEnd/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="offline" title="Offline" subtitle="Download queue, storage budget, and what survives without a connection">
+          <DCArtboard id="downloads-m" label="Downloads · Mobile" width={390} height={844}>
+            <DownloadsMobile tweaks={t}/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="ads" title="Ads" subtitle="Bounded inline slot only · never over page art · never blocks scroll or tap · min 4 pages apart · max 1 per 90s · none in downloaded chapters · none in a new reader's first chapter">
+          <DCArtboard id="ad-cadence-m" label="Reader · ad cadence (every 4th page)" width={390} height={844}>
+            <ReaderAdCadenceMobile tweaks={t}/>
+          </DCArtboard>
+          <DCArtboard id="ad-end-m" label="Chapter break · sponsored + rewarded" width={390} height={844}>
+            <ReaderEndAdMobile tweaks={t}/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="premium" title="Premium & progression" subtitle="$15 lifetime or $1/mo · levels, tier rings, and avatars">
+          <DCArtboard id="paywall-m" label="Paywall · Mobile" width={390} height={844}>
+            <PremiumPaywallMobile tweaks={t}/>
+          </DCArtboard>
+          <DCArtboard id="profile-free-m" label="Profile · Free (no ring)" width={390} height={844}>
+            <ProfilePremiumMobile tweaks={t} premium={false}/>
+          </DCArtboard>
+          <DCArtboard id="profile-prem-m" label="Profile · Premium (tier ring)" width={390} height={844}>
+            <ProfilePremiumMobile tweaks={t} premium/>
+          </DCArtboard>
+          <DCArtboard id="avatar-m" label="Avatar picker · Mobile" width={390} height={844}>
+            <AvatarPickerMobile tweaks={t}/>
+          </DCArtboard>
+          <DCArtboard id="ladder-m" label="Level ladder · 11 tiers" width={390} height={844}>
+            <LevelLadderMobile tweaks={t}/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="search" title="Search & Library" subtitle="Universal search · per-shelf library">
+          <DCArtboard id="search-d" label="Search · Desktop" width={1440} height={1420}>
+            <SearchDesktop tweaks={t}/>
+          </DCArtboard>
+          <DCArtboard id="library-d" label="Library · Desktop" width={1440} height={1160}>
+            <LibraryDesktop tweaks={t}/>
+          </DCArtboard>
+          <DCArtboard id="library-m" label="Library · Mobile" width={390} height={844}>
+            <LibraryMobile tweaks={t}/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="auth" title="Auth" subtitle="Sign in / sign up · email + SSO">
+          <DCArtboard id="signin-d" label="Sign in · Desktop" width={1280} height={1100}>
+            <SignInDesktop tweaks={t} mode="signin"/>
+          </DCArtboard>
+          <DCArtboard id="signup-d" label="Sign up · Desktop" width={1280} height={1100}>
+            <SignInDesktop tweaks={t} mode="signup"/>
+          </DCArtboard>
+          <DCArtboard id="signin-m" label="Sign in · Mobile" width={390} height={844}>
+            <SignInMobile tweaks={t}/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="account" title="Account & Design" subtitle="Settings hub with a Design tab so each user can theme MangaX their way">
+          <DCArtboard id="settings-design-d" label="Settings · Design (Desktop)" width={1280} height={2430}>
+            <SettingsShell tweaks={t} active="design"><DesignTabDesktop tweaks={t}/></SettingsShell>
+          </DCArtboard>
+          <DCArtboard id="settings-account-d" label="Settings · Account (Desktop)" width={1280} height={1500}>
+            <SettingsShell tweaks={t} active="account"><AccountTabDesktop tweaks={t}/></SettingsShell>
+          </DCArtboard>
+          <DCArtboard id="avatar-menu-d" label="Avatar dropdown · Desktop" width={1280} height={740}>
+            <AvatarMenuDesktop tweaks={t}/>
+          </DCArtboard>
+          <DCArtboard id="profile-m" label="Profile / You · Mobile" width={390} height={844}>
+            <ProfileMobile tweaks={t}/>
+          </DCArtboard>
+          <DCArtboard id="design-m" label="Design · Mobile" width={390} height={844}>
+            <DesignTabMobile tweaks={t}/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCPostIt top={20} left={28} rotate={-3} width={220}>
+          MangaX system · dark mode + crimson accent. Tweak panel (top-right toolbar) lets you swap accent / font / browse density to compare.
+        </DCPostIt>
+        <DCPostIt top={20} left={300} rotate={2} width={240}>
+          New: per-user accounts. The Design tab lets each reader pick accent, theme, type & reader defaults — synced across devices.
+        </DCPostIt>
+      </DesignCanvas>
+
+      <TweaksPanel title="MangaX system">
+        <TweakSection label="Accent">
+          <TweakColor label="Color" value={t.accent === 'crimson' ? '#ff2e4d' : t.accent === 'amber' ? '#ff9e2c' : '#7c5cff'}
+            options={['#ff2e4d', '#ff9e2c', '#7c5cff']}
+            onChange={(v) => setTweak('accent', v === '#ff2e4d' ? 'crimson' : v === '#ff9e2c' ? 'amber' : 'iris')}/>
+        </TweakSection>
+        <TweakSection label="Type">
+          <TweakRadio label="Font pairing" value={t.font}
+            options={[
+              { value: 'grotesk', label: 'Grotesk' },
+              { value: 'serif', label: 'Serif' },
+              { value: 'mono', label: 'Mono' },
+            ]}
+            onChange={(v) => setTweak('font', v)}/>
+        </TweakSection>
+        <TweakSection label="Browse">
+          <TweakRadio label="Card density" value={t.density}
+            options={[
+              { value: 'compact', label: 'Compact' },
+              { value: 'regular', label: 'Regular' },
+              { value: 'comfy', label: 'Comfy' },
+            ]}
+            onChange={(v) => setTweak('density', v)}/>
+        </TweakSection>
+      </TweaksPanel>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+
+</body>
+</html>

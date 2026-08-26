@@ -1,0 +1,17 @@
+# Secrets — never commit these. The repo is public.
+.env
+.env.local
+.env.*.local
+**/.env.local
+**/.env.*.local
+
+# Dependencies and build output
+node_modules/
+dist/
+.expo/
+web-build/
+*.tsbuildinfo
+
+# OS noise
+.DS_Store
+Thumbs.db
