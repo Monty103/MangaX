@@ -2,7 +2,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { SERIES } from './mockSeries';
 import type { Series } from './types';
 
-// Real catalog lives in Postgres now (see supabase/schema.sql, seeded with
+// Real catalog lives in Postgres now (see supabase/migrations/, seeded with
 // the same 12 titles as mockSeries.ts so ids line up 1:1). Falls back to
 // the local mock array whenever Supabase isn't configured or the request
 // fails — keeps every screen renderable offline / in environments without

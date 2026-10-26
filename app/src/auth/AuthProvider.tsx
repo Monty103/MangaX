@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: email.trim(),
         password,
         // Lands in raw_user_meta_data; the profiles row itself is created by
-        // the on_auth_user_created trigger (see supabase/schema.sql).
+        // the on_auth_user_created trigger (see supabase/migrations/).
         options: { data: { display_name: displayName.trim() } },
       });
       if (error) return { error: error.message };

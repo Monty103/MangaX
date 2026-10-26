@@ -1,13 +1,11 @@
--- MangaX schema — run in your Supabase project's SQL editor.
--- Covers: profiles/theme+premium state, catalog (series/chapters/pages),
--- per-user library/progress, and social (ratings/comments). Everything is
--- keyed to auth.uid() and locked down with row-level security so each user
--- only ever reads/writes their own rows; series/chapters/pages are public
--- read, writes reserved for a service role (content pipeline), not users.
+-- MangaX schema — covers: profiles/theme+premium state, catalog
+-- (series/chapters/pages), per-user library/progress, and social
+-- (ratings/comments). Everything is keyed to auth.uid() and locked down
+-- with row-level security so each user only ever reads/writes their own
+-- rows; series/chapters/pages are public read, writes reserved for a
+-- service role (content pipeline), not users.
 
 -- ── profiles ──────────────────────────────────────────────────────
--- One row per auth user. `theme` mirrors src/theme/tokens.ts so Design-tab
--- choices sync across devices (task: Account & Design settings).
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   username text unique,
@@ -24,7 +22,6 @@ create policy "profiles are self-readable" on profiles for select using (auth.ui
 create policy "profiles are self-writable" on profiles for update using (auth.uid() = id);
 create policy "profiles insert own row" on profiles for insert with check (auth.uid() = id);
 
--- Auto-create a profile row on signup.
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
@@ -37,11 +34,6 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
-
--- SECURITY DEFINER functions are otherwise exposed to anon/authenticated via
--- PostgREST RPC (`/rest/v1/rpc/handle_new_user`) — this one should only ever
--- fire from the trigger above, never be called directly by a client.
-revoke execute on function public.handle_new_user() from public, anon, authenticated;
 
 -- ── catalog ───────────────────────────────────────────────────────
 create table if not exists series (
@@ -82,9 +74,6 @@ alter table chapter_pages enable row level security;
 create policy "series are publicly readable" on series for select using (true);
 create policy "chapters are publicly readable" on chapters for select using (true);
 create policy "pages are publicly readable" on chapter_pages for select using (true);
--- No insert/update/delete policies for anon/authenticated: catalog writes
--- go through the service-role key from your content pipeline, never the
--- client app.
 
 -- ── per-user library & progress ──────────────────────────────────
 create table if not exists library_entries (
@@ -134,7 +123,3 @@ create policy "comments are publicly readable" on comments for select using (tru
 create policy "users write own comments" on comments for insert with check (auth.uid() = user_id);
 create policy "users edit own comments" on comments for update using (auth.uid() = user_id);
 create policy "users delete own comments" on comments for delete using (auth.uid() = user_id);
-
--- Note: downloaded chapter images are intentionally NOT modeled here — per
--- chats/chat2.md they live on-device (expo-file-system) with a local
--- SQLite index (task: Offline downloads) and never sync to Postgres.

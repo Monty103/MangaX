@@ -41,7 +41,7 @@ export async function fetchSeriesById(id: number): Promise<Series | undefined> {
 }
 
 // Real DB only carries a handful of recent chapters per series (seeded —
-// see supabase/schema.sql), not the full historical run a real content
+// see supabase/migrations/), not the full historical run a real content
 // pipeline would have. Falls back to synthesizing a descending chapter list
 // from the mock series' `chapters` count so the screen still has something
 // to show without a seeded/connected backend.

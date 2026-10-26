@@ -19,7 +19,7 @@ const DEFAULTS: Stored = { premium: false, xp: 0, chaptersRead: 0 };
  *
  * Device-local for now. The authoritative source once billing is wired up
  * is the `profiles.premium` / `profiles.xp` columns (see
- * supabase/schema.sql), reconciled against the store receipt — never trust
+ * supabase/migrations/), reconciled against the store receipt — never trust
  * a client flag for real entitlement.
  */
 export function useEntitlement() {

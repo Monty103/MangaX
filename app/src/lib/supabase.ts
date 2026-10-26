@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 
 // EXPO_PUBLIC_* vars are inlined at build time and are safe to ship to the
 // client — the anon key is meant to be public; access control lives in
-// Postgres RLS policies (see supabase/schema.sql), not in secrecy of this
+// Postgres RLS policies (see supabase/migrations/), not in secrecy of this
 // key. Fill these in from your Supabase project's Settings > API page.
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;

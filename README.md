@@ -32,9 +32,19 @@ Without it the app still runs, falling back to local mock data.
 
 ### Database
 
-Run `app/supabase/schema.sql` in your Supabase SQL editor. It creates
-profiles, the catalog (series / chapters / pages), per-user library and
-reading progress, and ratings/comments — all with RLS keyed to `auth.uid()`.
+The schema lives in `app/supabase/migrations/`, one file per migration,
+named with the version Supabase recorded when it was applied to the live
+project. To set up a fresh project, apply them in filename order (SQL editor,
+or `supabase db push` once the CLI is linked). They create profiles, the
+catalog (series / chapters / pages), per-user library and reading progress,
+and ratings/comments — all with RLS keyed to `auth.uid()` — then seed 12 demo
+titles and link the catalog to manga_fetcher (`fetcher_*` columns,
+`sync_state`).
+
+Change the schema by adding a new migration, never by editing an applied one.
+
+Downloaded chapter images are intentionally not modeled in Postgres: they
+live on-device (expo-file-system) with a local SQLite index and never sync.
 
 ---
 

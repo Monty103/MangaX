@@ -1,0 +1,2 @@
+# Migrations must stay byte-identical to what Supabase recorded when applied.
+app/supabase/migrations/*.sql text eol=lf
