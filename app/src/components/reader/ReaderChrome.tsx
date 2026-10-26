@@ -56,7 +56,9 @@ export function ReaderBottomChrome({
   page,
   pageCount,
   chapter,
-  totalChapters,
+  prevChapter,
+  nextChapter,
+  lastChapter,
   pickerOpen,
   onTogglePicker,
   onPrev,
@@ -66,7 +68,11 @@ export function ReaderBottomChrome({
   page: number;
   pageCount: number;
   chapter: number;
-  totalChapters: number;
+  /** Neighbours in the real chapter list; numbers can skip or be decimal (150, 150.5). */
+  prevChapter: number | null;
+  nextChapter: number | null;
+  /** Shown as "chapter / last". A count would read wrong once numbers skip ("150 / 4"). */
+  lastChapter: number;
   pickerOpen: boolean;
   onTogglePicker: () => void;
   onPrev: () => void;
@@ -74,8 +80,8 @@ export function ReaderBottomChrome({
 }) {
   const { theme } = useMangaTheme();
   const insets = useSafeAreaInsets();
-  const atFirst = chapter <= 1;
-  const atLast = chapter >= totalChapters;
+  const atFirst = prevChapter == null;
+  const atLast = nextChapter == null;
   const pct = pageCount > 0 ? Math.min(100, (page / pageCount) * 100) : 0;
 
   return (
@@ -85,13 +91,16 @@ export function ReaderBottomChrome({
     >
       <LinearGradient colors={['transparent', 'rgba(10,10,12,0.95)']} locations={[0, 0.4]} style={StyleSheet.absoluteFill} />
 
-      <View style={styles.progressRow}>
-        <Text style={{ fontFamily: 'JetBrainsMono_600SemiBold', fontSize: 10.5, color: theme.colors.text3 }}>{page}</Text>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: theme.accent }]} />
+      {/* No pages yet (loading, preparing, unavailable): no page progress to show. */}
+      {pageCount > 0 && (
+        <View style={styles.progressRow}>
+          <Text style={{ fontFamily: 'JetBrainsMono_600SemiBold', fontSize: 10.5, color: theme.colors.text3 }}>{page}</Text>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: theme.accent }]} />
+          </View>
+          <Text style={{ fontFamily: 'JetBrainsMono_600SemiBold', fontSize: 10.5, color: theme.colors.text3 }}>{pageCount}</Text>
         </View>
-        <Text style={{ fontFamily: 'JetBrainsMono_600SemiBold', fontSize: 10.5, color: theme.colors.text3 }}>{pageCount}</Text>
-      </View>
+      )}
 
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable onPress={onPrev} disabled={atFirst} style={[styles.navBtn, { opacity: atFirst ? 0.45 : 1 }]}>
@@ -99,7 +108,7 @@ export function ReaderBottomChrome({
           <View style={{ alignItems: 'flex-start', gap: 3 }}>
             <Text style={{ fontFamily: 'JetBrainsMono_500Medium', fontSize: 9, color: theme.colors.text3, letterSpacing: 0.4 }}>PREV</Text>
             <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 11.5, color: atFirst ? theme.colors.text3 : theme.colors.text }}>
-              Ch. {Math.max(1, chapter - 1)}
+              Ch. {prevChapter ?? chapter}
             </Text>
           </View>
         </Pressable>
@@ -114,7 +123,7 @@ export function ReaderBottomChrome({
           <View style={{ alignItems: 'center', gap: 3 }}>
             <Text style={{ fontFamily: 'JetBrainsMono_500Medium', fontSize: 9, color: theme.colors.text3, letterSpacing: 0.5 }}>CHAPTER</Text>
             <Text style={{ fontFamily: theme.displayFont, fontWeight: '700', fontSize: 14, color: theme.colors.text }}>
-              {chapter} <Text style={{ fontFamily: 'JetBrainsMono_500Medium', fontSize: 11, color: theme.colors.text3 }}>/ {totalChapters}</Text>
+              {chapter} <Text style={{ fontFamily: 'JetBrainsMono_500Medium', fontSize: 11, color: theme.colors.text3 }}>/ {lastChapter}</Text>
             </Text>
           </View>
           <Icon name="chevronD" size={13} color={theme.colors.text} />
@@ -137,7 +146,7 @@ export function ReaderBottomChrome({
               NEXT
             </Text>
             <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 11.5, color: atLast ? theme.colors.text3 : '#fff' }}>
-              Ch. {Math.min(totalChapters, chapter + 1)}
+              Ch. {nextChapter ?? chapter}
             </Text>
           </View>
           <Icon name="chevronR" size={13} color={atLast ? theme.colors.text3 : '#fff'} />

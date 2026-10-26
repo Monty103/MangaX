@@ -13,16 +13,19 @@ const RING_CIRCUMFERENCE = 157; // 2πr for r=25
 // has scrolled through the seam; at 1 the next chapter commits.
 export function ChapterSeam({
   chapter,
+  prevChapter,
   nextChapter,
-  totalChapters,
+  lastChapter,
   pull,
   seamless,
   onPrev,
   onNext,
 }: {
   chapter: number;
+  prevChapter: number | null;
   nextChapter: number | null;
-  totalChapters: number;
+  /** Highest chapter number; shown as "X OF last" (a count reads wrong once numbers skip). */
+  lastChapter: number;
   pull: number;
   seamless: boolean;
   onPrev: () => void;
@@ -82,9 +85,9 @@ export function ChapterSeam({
       )}
 
       <View style={styles.navRow}>
-        <Pressable onPress={onPrev} disabled={chapter <= 1} style={[styles.prevBtn, { backgroundColor: theme.colors.surface2, borderColor: theme.colors.border, opacity: chapter <= 1 ? 0.45 : 1 }]}>
+        <Pressable onPress={onPrev} disabled={prevChapter == null} style={[styles.prevBtn, { backgroundColor: theme.colors.surface2, borderColor: theme.colors.border, opacity: prevChapter == null ? 0.45 : 1 }]}>
           <Icon name="chevronL" size={13} color={theme.colors.text2} />
-          <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 11.5, color: theme.colors.text2 }}>Ch. {Math.max(1, chapter - 1)}</Text>
+          <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 11.5, color: theme.colors.text2 }}>Ch. {prevChapter ?? chapter}</Text>
         </Pressable>
         <Pressable onPress={onNext} disabled={nextChapter == null} style={[styles.nextBtn, { backgroundColor: theme.accent, opacity: nextChapter == null ? 0.45 : 1 }]}>
           <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 13, color: '#fff' }}>
@@ -95,7 +98,7 @@ export function ChapterSeam({
       </View>
 
       <Text style={{ fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: theme.colors.text4, marginTop: 14, letterSpacing: 0.6 }}>
-        {chapter} OF {totalChapters}
+        {chapter} OF {lastChapter}
       </Text>
     </View>
   );

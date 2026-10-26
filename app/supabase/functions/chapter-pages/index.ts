@@ -27,9 +27,13 @@ const db = createClient(Deno.env.get('SUPABASE_URL')!, secretKeys[0], {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const fetcherUrl = Deno.env.get('MANGA_FETCHER_URL');
-const fetcherKey = Deno.env.get('MANGA_FETCHER_KEY');
-const fetcher = fetcherUrl && fetcherKey ? new MangaFetcherClient({ baseUrl: fetcherUrl, apiKey: fetcherKey }) : null;
+// Read per request, not at startup: secrets set or changed in the dashboard
+// apply without a redeploy, but a warm isolate would keep a startup copy.
+function fetcherFromEnv() {
+  const baseUrl = Deno.env.get('MANGA_FETCHER_URL');
+  const apiKey = Deno.env.get('MANGA_FETCHER_KEY');
+  return baseUrl && apiKey ? new MangaFetcherClient({ baseUrl, apiKey }) : null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -64,6 +68,7 @@ Deno.serve(async (req) => {
   if (!Number.isSafeInteger(seriesId) || (seriesId as number) <= 0) return json({ error: 'seriesId must be a positive integer' }, 400);
   if (typeof chapter !== 'number' || !Number.isFinite(chapter) || chapter < 0) return json({ error: 'chapter must be a non-negative number' }, 400);
 
+  const fetcher = fetcherFromEnv();
   if (!fetcher) return json({ error: 'MANGA_FETCHER_URL / MANGA_FETCHER_KEY are not set' }, 500);
 
   try {

@@ -6,24 +6,48 @@ import { useMangaTheme } from '@/theme/ThemeProvider';
 import { useReaderSettings } from '@/theme/useReaderSettings';
 import { GAP_PX } from '@/theme/readerSettings';
 import { ReaderPage } from '@/components/reader/ReaderPage';
+import { ChapterStatusCard } from '@/components/reader/ChapterStatusCard';
 import { ReaderTopChrome, ReaderBottomChrome, ChapterPicker } from '@/components/reader/ReaderChrome';
 import { ChapterSeam, NextChapterStrip } from '@/components/reader/ChapterSeam';
 import { ReaderSettingsSheet } from '@/components/reader/ReaderSettingsSheet';
 import { InlineReaderAd, ChapterBreakAd } from '@/components/monetization/AdSlot';
 import { useEntitlement } from '@/monetization/useEntitlement';
 import { shouldShowInlineAd, shouldShowChapterBreakAd } from '@/monetization/adCadence';
+import { fetchChapters, fetchSeriesById } from '@/data/chapterRepository';
 import { seriesById } from '@/data/mockSeries';
+import { useChapterPages, type ChapterPagesState } from '@/hooks/useChapterPages';
+import type { ReaderPage as PageImage } from '@/data/pageRepository';
+import type { Series } from '@/data/types';
+import type { PageFit } from '@/theme/readerSettings';
 
 // Route param is `<seriesId>-<chapterNumber>` (see how Home/Series link in).
+// Chapter numbers can be decimal (150.5), which survives the split on '-'.
 function parseChapterId(raw: string | undefined): { seriesId: number; chapter: number } {
   const [s, c] = (raw ?? '').split('-');
   return { seriesId: Number(s) || 1, chapter: Number(c) || 1 };
 }
 
-// Page count is deterministic per chapter so page totals stay stable across
-// re-renders and match what the series screen advertised.
-function pageCountFor(chapter: number) {
-  return 20 + (chapter % 15);
+// Placeholder mode only (Supabase not configured): page count is
+// deterministic per chapter so totals stay stable across re-renders.
+function placeholderPageCount(chapter: number) {
+  return 20 + (Math.floor(chapter) % 15);
+}
+
+/** Pages to lay out: real images when available, placeholders in offline UI mode. */
+function layoutPages(state: ChapterPagesState, chapter: number): (PageImage | undefined)[] | null {
+  if (state.status === 'available') return state.pages;
+  if (state.status === 'placeholder') return Array.from({ length: placeholderPageCount(chapter) }, () => undefined);
+  return null;
+}
+
+// Height of one page. "fit width" keeps each page's own aspect ratio (real
+// pages vary; placeholders use the 1.4 portrait default), "fit height" fills
+// the viewport, "original" is natural size, shrunk only to fit the width.
+function pageHeightFor(page: PageImage | undefined, fit: PageFit, width: number, viewportHeight: number) {
+  const ratio = page?.width && page?.height ? page.height / page.width : 1.4;
+  if (fit === 'height') return viewportHeight;
+  if (fit === 'original') return page?.width && page?.height ? Math.round(page.height * Math.min(1, width / page.width)) : 520;
+  return Math.round(width * ratio);
 }
 
 const SCROLL_HIDE_THRESHOLD = 6;
@@ -42,8 +66,21 @@ export default function ReaderScreen() {
   const router = useRouter();
   const { width, height } = useWindowDimensions();
 
-  const series = seriesById(parsed.seriesId);
-  const totalChapters = series?.chapters ?? 1;
+  const [series, setSeries] = useState<Series | undefined>(() => seriesById(parsed.seriesId));
+  // Real chapter numbers, ascending. They can skip and be decimal, so
+  // next/prev are neighbours in this list, never chapter ± 1.
+  const [chapterNumbers, setChapterNumbers] = useState<number[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSeriesById(parsed.seriesId).then((s) => !cancelled && s && setSeries(s));
+    fetchChapters(parsed.seriesId).then((rows) => {
+      if (!cancelled) setChapterNumbers(rows.map((r) => r.number).sort((a, b) => a - b));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [parsed.seriesId]);
 
   const [chapter, setChapter] = useState(parsed.chapter);
   const [chromeVisible, setChromeVisible] = useState(true);
@@ -61,17 +98,48 @@ export default function ReaderScreen() {
   // rebase itself emits.
   const committing = useRef(false);
 
-  const pageCount = pageCountFor(chapter);
-  const nextChapter = chapter < totalChapters ? chapter + 1 : null;
-  const seamlessActive = settings.mode === 'vertical' && settings.seamless;
+  // The route can name a chapter the list doesn't hold yet (still loading,
+  // or the placeholder list only covers recent chapters); keep it navigable.
+  const numbers = useMemo(
+    () => (chapterNumbers.includes(chapter) ? chapterNumbers : [...chapterNumbers, chapter].sort((a, b) => a - b)),
+    [chapterNumbers, chapter]
+  );
+  const position = numbers.indexOf(chapter);
+  const prevChapter = position > 0 ? numbers[position - 1] : null;
+  const nextChapter = position >= 0 && position < numbers.length - 1 ? numbers[position + 1] : null;
+  const totalChapters = numbers.length;
 
-  // Page height: "fit width" keeps the source's 3:2-ish portrait ratio,
-  // "fit height" fills the viewport, "original" uses a fixed nominal size.
-  const pageHeight = useMemo(() => {
-    if (settings.fit === 'height') return viewportH.current || height;
-    if (settings.fit === 'original') return 520;
-    return Math.round(width * 1.4);
-  }, [settings.fit, width, height]);
+  const current = useChapterPages(parsed.seriesId, chapter);
+  // Preloaded so seamless continue and the Next button show pages at once.
+  const upcoming = useChapterPages(parsed.seriesId, nextChapter);
+
+  const viewportHeight = viewportH.current || height;
+  const pages = useMemo(() => layoutPages(current.state, chapter), [current.state, chapter]);
+  const pageCount = pages?.length ?? 0;
+  const heights = useMemo(
+    () => (pages ?? []).map((p) => pageHeightFor(p, settings.fit, width, viewportHeight)),
+    [pages, settings.fit, width, viewportHeight]
+  );
+  const upcomingPages = useMemo(
+    () => (nextChapter == null ? null : layoutPages(upcoming.state, nextChapter)),
+    [upcoming.state, nextChapter]
+  );
+
+  // Stitch the next chapter only when both sides have pages to show; a seam
+  // into a "still preparing" card would commit into nothing.
+  const seamlessActive = settings.mode === 'vertical' && settings.seamless && pages != null && upcomingPages != null;
+
+  const gap = GAP_PX[settings.gap];
+  // Top offset of each page, for working out the current page from scroll.
+  const pageTops = useMemo(() => {
+    const tops: number[] = [];
+    let y = 0;
+    for (const h of heights) {
+      tops.push(y);
+      y += h + gap;
+    }
+    return tops;
+  }, [heights, gap]);
 
   // Chapters only count once each — otherwise paging back and forth would
   // farm XP. Session-scoped, since the durable record belongs in
@@ -87,11 +155,11 @@ export default function ReaderScreen() {
   );
 
   const goToChapter = useCallback(
-    (n: number) => {
-      const clamped = Math.max(1, Math.min(totalChapters, n));
+    (n: number | null) => {
+      if (n == null || !numbers.includes(n)) return;
       // Moving forward means the chapter just left was finished.
-      if (clamped > chapter) creditChapter(chapter);
-      setChapter(clamped);
+      if (n > chapter) creditChapter(chapter);
+      setChapter(n);
       setPage(1);
       setPull(0);
       setPickerOpen(false);
@@ -100,9 +168,9 @@ export default function ReaderScreen() {
       stitchY.current = 0;
       scrollRef.current?.scrollTo({ y: 0, animated: false });
       // Keep the URL honest so refresh/back lands on the chapter being read.
-      router.setParams({ chapterId: `${parsed.seriesId}-${clamped}` });
+      router.setParams({ chapterId: `${parsed.seriesId}-${n}` });
     },
-    [totalChapters, parsed.seriesId, router, chapter, creditChapter]
+    [numbers, parsed.seriesId, router, chapter, creditChapter]
   );
 
   // Reset when navigated to a different chapter from outside.
@@ -124,10 +192,11 @@ export default function ReaderScreen() {
       }
       lastY.current = y;
 
-      // Current page from scroll position through the page stack.
-      const gap = GAP_PX[settings.gap];
-      const per = pageHeight + gap;
-      setPage(Math.max(1, Math.min(pageCount, Math.floor(y / per) + 1)));
+      // Current page: the last page whose top has reached the viewport top.
+      // Pages differ in height, so this walks real offsets, not y / height.
+      let current = 0;
+      while (current + 1 < pageTops.length && pageTops[current + 1] <= y) current++;
+      setPage(Math.max(1, Math.min(pageCount, current + 1)));
 
       // Pull-to-continue: how far the seam has travelled up the viewport.
       // Rebased on the seam's real offset, as the design's own fix did.
@@ -141,7 +210,9 @@ export default function ReaderScreen() {
       // Commit the handoff: once the stitched page's top passes the viewport
       // top, the reader is genuinely in the next chapter. Swap chapter state
       // and rebase the scroll by the stitched region's offset so the pages
-      // stay exactly where they are on screen — the swap is invisible.
+      // stay exactly where they are on screen — the swap is invisible. The
+      // next chapter's pages are already cached by the `upcoming` preload,
+      // so the swapped-in chapter renders them on its first frame.
       if (seamlessActive && nextChapter != null && stitchY.current > 0 && y >= stitchY.current && !committing.current) {
         committing.current = true;
         const carry = y - stitchY.current;
@@ -160,7 +231,7 @@ export default function ReaderScreen() {
         });
       }
     },
-    [chromeVisible, pageHeight, pageCount, settings.gap, seamlessActive, nextChapter, parsed.seriesId, router, chapter, creditChapter]
+    [chromeVisible, pageTops, pageCount, seamlessActive, nextChapter, parsed.seriesId, router, chapter, creditChapter]
   );
 
   const toggleChrome = useCallback(() => {
@@ -168,14 +239,14 @@ export default function ReaderScreen() {
     setPickerOpen(false);
   }, []);
 
+  // Newest first, a window around the current chapter: two ahead, nine back.
   const pickerChapters = useMemo(() => {
-    const out: number[] = [];
-    for (let n = Math.min(totalChapters, chapter + 2); n >= Math.max(1, chapter - 9); n--) out.push(n);
-    return out;
-  }, [chapter, totalChapters]);
+    if (position < 0) return [chapter];
+    return numbers.slice(Math.max(0, position - 9), position + 3).reverse();
+  }, [numbers, position, chapter]);
 
-  const gap = GAP_PX[settings.gap];
   const dimOpacity = 1 - settings.brightness / 100;
+  const chapterKey = `${parsed.seriesId}-${chapter}`;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
@@ -189,36 +260,46 @@ export default function ReaderScreen() {
         contentContainerStyle={{ paddingBottom: 0 }}
       >
         <Pressable onPress={toggleChrome}>
-          {Array.from({ length: pageCount }, (_, i) => (
-            <View key={`${chapter}-${i}`} style={{ marginBottom: i === pageCount - 1 ? 0 : gap }}>
-              <ReaderPage chapterKey={`${parsed.seriesId}-${chapter}`} index={i} height={pageHeight} />
-              {/* Inline ad slots sit between pages, never over art, and are
-                  gated by the cadence rules (4 pages apart, 90s apart, none
-                  for premium or in a new reader's first chapter). */}
-              {shouldShowInlineAd({
-                pageIndex: i,
-                premium,
-                chaptersRead,
-                isDownloaded: false,
-                lastAdAt: 0,
-              }) && <InlineReaderAd />}
-            </View>
-          ))}
+          {pages == null ? (
+            <ChapterStatusCard
+              state={current.state as Exclude<ChapterPagesState, { status: 'available' } | { status: 'placeholder' }>}
+              chapter={chapter}
+              height={viewportHeight}
+              onRetry={current.refresh}
+            />
+          ) : (
+            pages.map((image, i) => (
+              <View key={`${chapter}-${i}`} style={{ marginBottom: i === pageCount - 1 ? 0 : gap }}>
+                <ReaderPage chapterKey={chapterKey} index={i} height={heights[i]} image={image} onError={current.refresh} />
+                {/* Inline ad slots sit between pages, never over art, and are
+                    gated by the cadence rules (4 pages apart, 90s apart, none
+                    for premium or in a new reader's first chapter). */}
+                {shouldShowInlineAd({
+                  pageIndex: i,
+                  premium,
+                  chaptersRead,
+                  isDownloaded: false,
+                  lastAdAt: 0,
+                }) && <InlineReaderAd />}
+              </View>
+            ))
+          )}
         </Pressable>
 
         {/* Chapter-break slot: the highest-value placement, at a natural
             pause, and inside the seam so seamless-continue still works. */}
-        {shouldShowChapterBreakAd({ premium, chaptersRead, isDownloaded: false }) && <ChapterBreakAd />}
+        {pages != null && shouldShowChapterBreakAd({ premium, chaptersRead, isDownloaded: false }) && <ChapterBreakAd />}
 
         <View onLayout={(e) => (seamY.current = e.nativeEvent.layout.y)}>
           <ChapterSeam
             chapter={chapter}
+            prevChapter={prevChapter}
             nextChapter={nextChapter}
-            totalChapters={totalChapters}
+            lastChapter={numbers[numbers.length - 1] ?? chapter}
             pull={pull}
             seamless={seamlessActive}
-            onPrev={() => goToChapter(chapter - 1)}
-            onNext={() => nextChapter && goToChapter(nextChapter)}
+            onPrev={() => goToChapter(prevChapter)}
+            onNext={() => goToChapter(nextChapter)}
           />
         </View>
 
@@ -227,12 +308,18 @@ export default function ReaderScreen() {
             the stitched pages reach the top of the viewport the commit
             swaps them in as the active chapter and rebases the scroll, so
             the swap is invisible and the next seam builds below. */}
-        {seamlessActive && nextChapter != null && (
+        {seamlessActive && nextChapter != null && upcomingPages != null && (
           <View onLayout={(e) => (stitchY.current = e.nativeEvent.layout.y)}>
-            <NextChapterStrip chapter={nextChapter} pageCount={pageCountFor(nextChapter)} />
-            {Array.from({ length: STITCHED_PAGES }, (_, i) => (
+            <NextChapterStrip chapter={nextChapter} pageCount={upcomingPages.length} />
+            {upcomingPages.slice(0, STITCHED_PAGES).map((image, i) => (
               <View key={`next-${nextChapter}-${i}`} style={{ marginBottom: gap }}>
-                <ReaderPage chapterKey={`${parsed.seriesId}-${nextChapter}`} index={i} height={pageHeight} />
+                <ReaderPage
+                  chapterKey={`${parsed.seriesId}-${nextChapter}`}
+                  index={i}
+                  height={pageHeightFor(image, settings.fit, width, viewportHeight)}
+                  image={image}
+                  onError={upcoming.refresh}
+                />
               </View>
             ))}
           </View>
@@ -248,7 +335,13 @@ export default function ReaderScreen() {
         visible={chromeVisible}
         seriesTitle={series?.title ?? 'Unknown series'}
         chapterNumber={pull >= 1 && nextChapter != null ? nextChapter : chapter}
-        subtitle={pull >= 1 && nextChapter != null ? `Chapter ${nextChapter} · pg 1 of ${pageCountFor(nextChapter)}` : `pg ${page} of ${pageCount}`}
+        subtitle={
+          pull >= 1 && nextChapter != null
+            ? `Chapter ${nextChapter} · pg 1 of ${upcomingPages?.length ?? 0}`
+            : pageCount > 0
+              ? `pg ${page} of ${pageCount}`
+              : ' '
+        }
         onBack={() => router.back()}
         onOpenSettings={() => setSettingsOpen(true)}
       />
@@ -267,11 +360,13 @@ export default function ReaderScreen() {
         page={page}
         pageCount={pageCount}
         chapter={chapter}
-        totalChapters={totalChapters}
+        prevChapter={prevChapter}
+        nextChapter={nextChapter}
+        lastChapter={numbers[numbers.length - 1] ?? chapter}
         pickerOpen={pickerOpen}
         onTogglePicker={() => setPickerOpen((o) => !o)}
-        onPrev={() => goToChapter(chapter - 1)}
-        onNext={() => goToChapter(chapter + 1)}
+        onPrev={() => goToChapter(prevChapter)}
+        onNext={() => goToChapter(nextChapter)}
       />
 
       <ReaderSettingsSheet

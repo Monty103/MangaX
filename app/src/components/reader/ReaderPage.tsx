@@ -1,14 +1,54 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Defs, Pattern, Rect, Line } from 'react-native-svg';
+import { Image } from 'expo-image';
 
 import { hashHue, hsl } from '@/lib/hashHue';
+import type { ReaderPage as PageImage } from '@/data/pageRepository';
+
+// One page of the reader. With `image`, the real page is drawn over the
+// placeholder, which doubles as its loading state; without it (Supabase not
+// configured) the placeholder is the page.
+export function ReaderPage({
+  chapterKey,
+  index,
+  height,
+  image,
+  onError,
+}: {
+  chapterKey: string;
+  index: number;
+  height: number;
+  image?: PageImage;
+  /** Usually an expired signed URL; the reader refetches the chapter. */
+  onError?: () => void;
+}) {
+  return (
+    <View style={{ height }}>
+      <PagePlaceholder chapterKey={chapterKey} index={index} height={height} />
+      {image && (
+        <Image
+          // Signed URLs change on every refresh; key the cache on the page
+          // itself so a refresh doesn't re-download it (native; web caches by URL).
+          source={{ uri: image.url, cacheKey: `page-${chapterKey}-${index}` }}
+          style={StyleSheet.absoluteFill}
+          contentFit="contain"
+          transition={120}
+          // Pages are read top to bottom; let the browser defer the far ones.
+          priority={index < 2 ? 'high' : 'normal'}
+          accessibilityLabel={`Page ${index + 1}`}
+          onError={onError}
+        />
+      )}
+    </View>
+  );
+}
 
 // Full-bleed page placeholder — same striped-swatch language as
 // CoverImage, but no rounded corners/scrim and labeled by page number
 // instead of title, matching how project/reader-frames.jsx and
 // desktop-frames-2.jsx's Reader use CoverPlaceholder per page.
-export function ReaderPage({ chapterKey, index, height }: { chapterKey: string; index: number; height: number }) {
+function PagePlaceholder({ chapterKey, index, height }: { chapterKey: string; index: number; height: number }) {
   const patternId = React.useId().replace(/[^a-zA-Z0-9]/g, '');
   const hue = hashHue(`${chapterKey}-${index}`);
   const bg = hsl(hue, 30, 10);

@@ -54,6 +54,10 @@ export async function getChapterPages({ fetcher, db, seriesId, chapter, ingest }
     // has no such chapter number, or no longer has the series. Either way it
     // is a content gap, not a server failure.
     if (err instanceof MangaFetcherError && err.status === 404) {
+      // Logged because a misconfigured MANGA_FETCHER_URL (e.g. ending in /v1)
+      // also surfaces as a 404 ("no route for GET /v1/v1/...") and would
+      // otherwise look exactly like a missing chapter.
+      console.warn(`fetcher 404 for series ${seriesId} ch ${chapter}: ${err.message}`);
       return { status: 'unavailable', reason: 'This chapter isn’t available.' };
     }
     throw err;
