@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { fetchChapterPages, type ChapterPagesResult, type ReaderPage } from '@/data/pageRepository';
+import { localPages } from '@/downloads/storage';
 
 export type ChapterPagesState =
   /** Supabase isn't configured: render the generated placeholder pages. */
   | { status: 'placeholder' }
   | { status: 'loading' }
-  | { status: 'available'; pages: ReaderPage[]; urlsExpireAt: string }
+  /** `offline`: pages come from a download on this device and never expire. */
+  | { status: 'available'; pages: ReaderPage[]; urlsExpireAt: string; offline?: true }
   | { status: 'ingesting'; retryAfterSeconds: number }
   | { status: 'unavailable'; reason: string; requiresSignIn?: true }
   | { status: 'error'; message: string };
@@ -30,7 +32,15 @@ const cache = new Map<string, ChapterPagesState>();
 function fresh(state: ChapterPagesState | undefined): state is ChapterPagesState {
   if (!state) return false;
   if (state.status !== 'available') return state.status === 'unavailable' || state.status === 'placeholder';
+  if (state.offline) return true;
   return Date.parse(state.urlsExpireAt) - Date.now() > REFRESH_BEFORE_EXPIRY_MS;
+}
+
+/** The chapter's downloaded pages as a reader state, or null if not downloaded. */
+async function offlineState(key: string): Promise<ChapterPagesState | null> {
+  const pages = await localPages(key);
+  // urlsExpireAt is only read for network pages; offline ones never refresh.
+  return pages ? { status: 'available', pages, urlsExpireAt: new Date(8.64e15).toISOString(), offline: true } : null;
 }
 
 function toState(result: ChapterPagesResult | null): ChapterPagesState {
@@ -100,11 +110,20 @@ export function useChapterPages(seriesId: number, chapter: number | null) {
     const cached = cache.get(key);
     if (generation === 0 && fresh(cached)) {
       setEntry({ key, state: cached });
-      if (cached.status === 'available') {
+      if (cached.status === 'available' && !cached.offline) {
         const refreshIn = Date.parse(cached.urlsExpireAt) - Date.now() - REFRESH_BEFORE_EXPIRY_MS;
         timer = setTimeout(load, Math.max(30_000, refreshIn));
       }
+    } else if (generation === 0) {
+      // A downloaded copy wins: it works offline and costs no request.
+      offlineState(key).then((offline) => {
+        if (cancelled) return;
+        if (offline) publish(offline);
+        else load();
+      });
     } else {
+      // refresh() after an image error: go to the network, even for a
+      // downloaded chapter, since a local file that fails won't fix itself.
       load();
     }
 

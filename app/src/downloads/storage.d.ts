@@ -5,7 +5,7 @@
 // platform extensions, so this declaration file supplies the shared shape
 // both implementations satisfy. There is deliberately no `storage.ts`
 // runtime file — adding one would let the wrong platform's code be bundled.
-import type { DownloadEntry } from './types';
+import type { DownloadEntry, LocalPage, LocalPageInfo } from './types';
 
 export declare const isSupported: boolean;
 export declare function listEntries(): Promise<DownloadEntry[]>;
@@ -13,3 +13,6 @@ export declare function upsertEntry(e: DownloadEntry): Promise<void>;
 export declare function deleteEntry(id: string): Promise<void>;
 export declare function diskUsage(): Promise<number>;
 export declare function downloadPage(id: string, pageIndex: number, url: string): Promise<number>;
+export declare function writeManifest(id: string, pages: LocalPageInfo[]): Promise<void>;
+/** The chapter's downloaded pages, or null when it isn't fully on this device. */
+export declare function localPages(id: string): Promise<LocalPage[] | null>;

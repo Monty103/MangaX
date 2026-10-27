@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import { Directory, File, Paths } from 'expo-file-system';
 
-import type { DownloadEntry, DownloadState } from './types';
+import type { DownloadEntry, DownloadState, LocalPage, LocalPageInfo } from './types';
 
 // Per chats/chat2.md: downloaded chapter images live on the device as files
 // with a local SQLite index of what's downloaded. They deliberately do NOT
@@ -124,12 +124,53 @@ export async function diskUsage(): Promise<number> {
   }
 }
 
+const pageName = (pageIndex: number) => `pg_${String(pageIndex + 1).padStart(3, '0')}`;
+const MANIFEST = 'pages.json';
+
 /** Downloads one page image into the chapter's directory. */
 export async function downloadPage(id: string, pageIndex: number, url: string): Promise<number> {
   const dir = chapterDir(id);
-  const name = `pg_${String(pageIndex + 1).padStart(3, '0')}`;
-  const file = await File.downloadFileAsync(url, new File(dir, name));
+  // Starting over: the chapter isn't complete until a new manifest is written.
+  if (pageIndex === 0) {
+    const manifest = new File(dir, MANIFEST);
+    if (manifest.exists) manifest.delete();
+  }
+  // Re-downloading after an error: replace the partial file.
+  const target = new File(dir, pageName(pageIndex));
+  if (target.exists) target.delete();
+  const file = await File.downloadFileAsync(url, target);
   return file.size ?? 0;
+}
+
+/**
+ * Records the page sizes once every page is on disk. The reader needs them to
+ * lay pages out before the images decode, and its presence marks the chapter
+ * as complete (a crash mid-download leaves no manifest).
+ */
+export async function writeManifest(id: string, pages: LocalPageInfo[]): Promise<void> {
+  const file = new File(chapterDir(id), MANIFEST);
+  file.write(JSON.stringify(pages));
+}
+
+export async function localPages(id: string): Promise<LocalPage[] | null> {
+  try {
+    const dir = new Directory(chaptersRoot(), id);
+    if (!dir.exists) return null;
+    const manifest = new File(dir, MANIFEST);
+    if (!manifest.exists) return null;
+    const info = JSON.parse(await manifest.text()) as LocalPageInfo[];
+    const pages: LocalPage[] = [];
+    for (let i = 0; i < info.length; i++) {
+      const file = new File(dir, pageName(i));
+      // A page removed behind our back: treat the chapter as not downloaded
+      // so the reader falls back to the network instead of showing a gap.
+      if (!file.exists) return null;
+      pages.push({ ...info[i], url: file.uri });
+    }
+    return pages;
+  } catch {
+    return null;
+  }
 }
 
 export const isSupported = true;

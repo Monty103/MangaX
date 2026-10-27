@@ -1,4 +1,4 @@
-import type { DownloadEntry } from './types';
+import type { DownloadEntry, LocalPage, LocalPageInfo } from './types';
 
 // Offline chapter downloads are a native capability: they need a real
 // filesystem (expo-file-system) and a local SQLite index. The browser
@@ -23,4 +23,10 @@ export async function diskUsage(): Promise<number> {
 
 export async function downloadPage(_id: string, _pageIndex: number, _url: string): Promise<number> {
   throw new Error('Downloads are not available on the web build.');
+}
+
+export async function writeManifest(_id: string, _pages: LocalPageInfo[]): Promise<void> {}
+
+export async function localPages(_id: string): Promise<LocalPage[] | null> {
+  return null;
 }

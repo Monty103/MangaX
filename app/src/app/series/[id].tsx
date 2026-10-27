@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, useWindowDimensions, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +15,7 @@ import { SecondaryBtn } from '@/components/series/SecondaryBtn';
 import { DetailRow } from '@/components/series/DetailRow';
 import { ChapterRowDesktop, ChapterRowMobile } from '@/components/series/ChapterRow';
 import { fetchSeriesById, fetchChapters, ChapterRow } from '@/data/chapterRepository';
+import { useDownloads } from '@/downloads/useDownloads';
 import { SERIES } from '@/data/mockSeries';
 import type { Series } from '@/data/types';
 
@@ -39,6 +40,13 @@ export default function SeriesScreen() {
   const [series, setSeries] = useState<Series | undefined>(() => SERIES.find((s) => s.id === seriesId));
   const [chapters, setChapters] = useState<ChapterRow[]>([]);
   const [tab, setTab] = useState<Tab>('chapters');
+  const downloads = useDownloads();
+  // One line of feedback for download taps (why a chapter can't be
+  // downloaded, or what finished); clears itself.
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const downloadingAll = useRef(false);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
 
   useEffect(() => {
     fetchSeriesById(seriesId).then((s) => s && setSeries(s));
@@ -70,15 +78,83 @@ export default function SeriesScreen() {
 
   const synopsis = SYNOPSIS[series.id] ?? 'No synopsis available yet.';
 
+  const showNotice = (text: string) => {
+    clearTimeout(noticeTimer.current);
+    setNotice(text);
+    noticeTimer.current = setTimeout(() => setNotice(null), 6000);
+  };
+  const entryFor = (n: number) => downloads.entries.find((e) => e.id === `${series.id}-${n}`);
+
+  const downloadChapter = async (n: number) => {
+    const reason = await downloads.enqueue(series.id, series.title, n);
+    showNotice(reason ?? `Chapter ${n} is saved for offline reading.`);
+  };
+
+  // Every readable chapter not already on the device, oldest first, one at
+  // a time (each download fetches fresh page URLs as it starts).
+  const downloadAll = async () => {
+    if (downloadingAll.current) return;
+    if (!downloads.isSupported) {
+      showNotice('Downloads are only available in the iOS and Android apps.');
+      return;
+    }
+    const todo = chapters
+      .filter((c) => c.fetcherStatus === 'available' && entryFor(c.number)?.state !== 'done')
+      .map((c) => c.number)
+      .sort((a, b) => a - b);
+    if (todo.length === 0) {
+      showNotice(chapters.some((c) => c.fetcherStatus === 'available') ? 'Every readable chapter is already downloaded.' : 'No chapters are ready to download yet.');
+      return;
+    }
+    downloadingAll.current = true;
+    showNotice(`Downloading ${todo.length} chapter${todo.length === 1 ? '' : 's'}…`);
+    let saved = 0;
+    let firstReason: string | null = null;
+    for (const n of todo) {
+      const reason = await downloads.enqueue(series.id, series.title, n);
+      if (reason) firstReason ??= reason;
+      else saved++;
+    }
+    downloadingAll.current = false;
+    showNotice(firstReason ? `Downloaded ${saved} of ${todo.length}. ${firstReason}` : `Downloaded ${saved} chapter${saved === 1 ? '' : 's'}.`);
+  };
+  const rowDownload = (n: number) => ({ entry: entryFor(n), onPress: () => downloadChapter(n) });
+
+  // Floats over the bottom of the screen: download taps happen anywhere in
+  // a long chapter list, so a message placed in the page could be off-screen.
+  const Notice = () =>
+    notice ? (
+      <View pointerEvents="none" style={[styles.notice, { bottom: insets.bottom + 16 }]}>
+        <Text
+          accessibilityLiveRegion="polite"
+          style={{
+            maxWidth: 520,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: theme.colors.border,
+            backgroundColor: theme.colors.surface2,
+            fontFamily: theme.bodyFont,
+            fontSize: 12.5,
+            lineHeight: 18,
+            color: theme.colors.text,
+          }}
+        >
+          {notice}
+        </Text>
+      </View>
+    ) : null;
+
   const TabContent = () => {
     if (tab === 'chapters') {
       return (
         <View style={{ marginTop: 14, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 10, overflow: 'hidden', backgroundColor: theme.colors.surface }}>
           {chapters.map((c) =>
             isDesktop ? (
-              <ChapterRowDesktop key={c.id} seriesId={series!.id} chapter={c} />
+              <ChapterRowDesktop key={c.id} seriesId={series!.id} chapter={c} download={rowDownload(c.number)} />
             ) : (
-              <ChapterRowMobile key={c.id} seriesId={series!.id} chapter={c} />
+              <ChapterRowMobile key={c.id} seriesId={series!.id} chapter={c} download={rowDownload(c.number)} />
             )
           )}
         </View>
@@ -124,168 +200,175 @@ export default function SeriesScreen() {
 
   if (isDesktop) {
     return (
-      <ScrollView style={{ flex: 1, backgroundColor: theme.colors.bg }}>
-        <Stack.Screen options={{ headerShown: false }} />
-        <View style={{ height: 320, position: 'relative' }}>
-          <CoverImage title={series.title} file={series.coverFile} label="banner_2880x720.jpg" dim style={{ height: '100%', width: '100%', borderRadius: 0 }} />
-          <LinearGradient colors={['rgba(10,10,12,0.4)', 'rgba(10,10,12,0.85)', theme.colors.bg]} locations={[0, 0.7, 1]} style={StyleSheet.absoluteFill} />
-        </View>
-
-        <View style={{ maxWidth: 1376, width: '100%', alignSelf: 'center', paddingHorizontal: 32, paddingBottom: 60, marginTop: -180 }}>
-          <View style={{ flexDirection: 'row', gap: 32, alignItems: 'flex-end', marginBottom: 36 }}>
-            <CoverImage title={series.title} file={series.coverFile} label="cover_high.jpg" style={{ width: 240, height: 340, borderRadius: 10 }} />
-            <View style={{ flex: 1, paddingBottom: 6 }}>
-              <Text style={{ fontFamily: theme.displayFont, fontWeight: '500', fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: theme.accent, marginBottom: 12 }}>
-                {series.demo} · {series.status}
-              </Text>
-              <Text style={{ fontFamily: theme.displayFont, fontWeight: '800', fontSize: 44, lineHeight: 46, letterSpacing: -1, color: theme.colors.text }}>
-                {series.title}
-              </Text>
-              <Text style={{ fontFamily: theme.bodyFont, fontSize: 14, fontWeight: '500', color: theme.colors.text2, marginTop: 14 }}>
-                by {series.author} · {series.year}–present
-              </Text>
-              <View style={{ marginTop: 18 }}>
-                <Stars value={series.rating} count={series.ratings} size={14} />
-              </View>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 18 }}>
-                {series.tags.map((t) => (
-                  <Tag key={t} active>
-                    {t}
-                  </Tag>
-                ))}
-              </View>
-            </View>
-            <View style={{ width: 320, gap: 8 }}>
-              <Pressable
-                style={{ backgroundColor: theme.accent, paddingVertical: 14, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-                onPress={() => router.push(`/reader/${series.id}-${latestChapter}`)}
-              >
-                <Icon name="play" size={14} color="#fff" />
-                <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 14, color: '#fff' }}>Read Chapter {latestChapter}</Text>
-              </Pressable>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                <SecondaryBtn icon="bookmark">Add to library</SecondaryBtn>
-                <SecondaryBtn icon="download">Download</SecondaryBtn>
-                <SecondaryBtn icon="bell">Notify</SecondaryBtn>
-                <SecondaryBtn icon="share">Share</SecondaryBtn>
-              </View>
-            </View>
+      <View style={{ flex: 1 }}>
+        <ScrollView style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+          <Stack.Screen options={{ headerShown: false }} />
+          <View style={{ height: 320, position: 'relative' }}>
+            <CoverImage title={series.title} file={series.coverFile} label="banner_2880x720.jpg" dim style={{ height: '100%', width: '100%', borderRadius: 0 }} />
+            <LinearGradient colors={['rgba(10,10,12,0.4)', 'rgba(10,10,12,0.85)', theme.colors.bg]} locations={[0, 0.7, 1]} style={StyleSheet.absoluteFill} />
           </View>
-
-          <View style={[styles.tabBar, { borderBottomColor: theme.colors.border }]}>
-            {tabs.map((t) => (
-              <Pressable key={t.key} onPress={() => setTab(t.key)} style={[styles.tab, { borderBottomColor: tab === t.key ? theme.accent : 'transparent' }]}>
-                <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 14, color: tab === t.key ? theme.colors.text : theme.colors.text3 }}>
-                  {t.label}
+  
+          <View style={{ maxWidth: 1376, width: '100%', alignSelf: 'center', paddingHorizontal: 32, paddingBottom: 60, marginTop: -180 }}>
+            <View style={{ flexDirection: 'row', gap: 32, alignItems: 'flex-end', marginBottom: 36 }}>
+              <CoverImage title={series.title} file={series.coverFile} label="cover_high.jpg" style={{ width: 240, height: 340, borderRadius: 10 }} />
+              <View style={{ flex: 1, paddingBottom: 6 }}>
+                <Text style={{ fontFamily: theme.displayFont, fontWeight: '500', fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: theme.accent, marginBottom: 12 }}>
+                  {series.demo} · {series.status}
                 </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <View style={{ flexDirection: 'row', gap: 40 }}>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <TabContent />
-            </View>
-            <View style={{ width: 360, gap: 24 }}>
-              <DetailsCard />
-              <View>
-                <Text style={{ fontFamily: theme.displayFont, fontWeight: '700', fontSize: 16, color: theme.colors.text, marginBottom: 14 }}>You might like</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-                  {recommended.map((r) => (
-                    <SeriesCard key={r.id} series={r} width={164} starSize={10} showTag={false} />
+                <Text style={{ fontFamily: theme.displayFont, fontWeight: '800', fontSize: 44, lineHeight: 46, letterSpacing: -1, color: theme.colors.text }}>
+                  {series.title}
+                </Text>
+                <Text style={{ fontFamily: theme.bodyFont, fontSize: 14, fontWeight: '500', color: theme.colors.text2, marginTop: 14 }}>
+                  by {series.author} · {series.year}–present
+                </Text>
+                <View style={{ marginTop: 18 }}>
+                  <Stars value={series.rating} count={series.ratings} size={14} />
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 18 }}>
+                  {series.tags.map((t) => (
+                    <Tag key={t} active>
+                      {t}
+                    </Tag>
                   ))}
+                </View>
+              </View>
+              <View style={{ width: 320, gap: 8 }}>
+                <Pressable
+                  style={{ backgroundColor: theme.accent, paddingVertical: 14, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                  onPress={() => router.push(`/reader/${series.id}-${latestChapter}`)}
+                >
+                  <Icon name="play" size={14} color="#fff" />
+                  <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 14, color: '#fff' }}>Read Chapter {latestChapter}</Text>
+                </Pressable>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  <SecondaryBtn icon="bookmark">Add to library</SecondaryBtn>
+                  <SecondaryBtn icon="download" onPress={downloadAll}>Download</SecondaryBtn>
+                  <SecondaryBtn icon="bell">Notify</SecondaryBtn>
+                  <SecondaryBtn icon="share">Share</SecondaryBtn>
+                </View>
+              </View>
+            </View>
+  
+            <View style={[styles.tabBar, { borderBottomColor: theme.colors.border }]}>
+              {tabs.map((t) => (
+                <Pressable key={t.key} onPress={() => setTab(t.key)} style={[styles.tab, { borderBottomColor: tab === t.key ? theme.accent : 'transparent' }]}>
+                  <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 14, color: tab === t.key ? theme.colors.text : theme.colors.text3 }}>
+                    {t.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+  
+            <View style={{ flexDirection: 'row', gap: 40 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <TabContent />
+              </View>
+              <View style={{ width: 360, gap: 24 }}>
+                <DetailsCard />
+                <View>
+                  <Text style={{ fontFamily: theme.displayFont, fontWeight: '700', fontSize: 16, color: theme.colors.text, marginBottom: 14 }}>You might like</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                    {recommended.map((r) => (
+                      <SeriesCard key={r.id} series={r} width={164} starSize={10} showTag={false} />
+                    ))}
+                  </View>
                 </View>
               </View>
             </View>
           </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+        <Notice />
+      </View>
     );
   }
 
   // ── Mobile ──────────────────────────────────────────────────────
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: theme.colors.bg }}>
-      <Stack.Screen options={{ headerShown: false }} />
-      <View style={{ height: 320, position: 'relative' }}>
-        <CoverImage title={series.title} file={series.coverFile} label="banner_phone.jpg" dim style={{ height: '100%', width: '100%', borderRadius: 0 }} />
-        <LinearGradient colors={['rgba(10,10,12,0.5)', 'rgba(10,10,12,0.4)', theme.colors.bg]} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
-        <View style={[styles.mobileTopIcons, { top: insets.top + 8 }]}>
-          <Pressable onPress={() => router.back()} style={styles.circleBtn}>
-            <Icon name="chevronL" size={18} color="#fff" />
-          </Pressable>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <View style={styles.circleBtn}>
-              <Icon name="share" size={16} color="#fff" />
+    <View style={{ flex: 1 }}>
+      <ScrollView style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={{ height: 320, position: 'relative' }}>
+          <CoverImage title={series.title} file={series.coverFile} label="banner_phone.jpg" dim style={{ height: '100%', width: '100%', borderRadius: 0 }} />
+          <LinearGradient colors={['rgba(10,10,12,0.5)', 'rgba(10,10,12,0.4)', theme.colors.bg]} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
+          <View style={[styles.mobileTopIcons, { top: insets.top + 8 }]}>
+            <Pressable onPress={() => router.back()} style={styles.circleBtn}>
+              <Icon name="chevronL" size={18} color="#fff" />
+            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={styles.circleBtn}>
+                <Icon name="share" size={16} color="#fff" />
+              </View>
+              <View style={styles.circleBtn}>
+                <Icon name="bars" size={18} color="#fff" />
+              </View>
             </View>
-            <View style={styles.circleBtn}>
-              <Icon name="bars" size={18} color="#fff" />
+          </View>
+          <View style={styles.mobileHeaderRow}>
+            <CoverImage title={series.title} file={series.coverFile} label="cover.jpg" style={{ width: 110, height: 156 }} />
+            <View style={{ flex: 1, minWidth: 0, paddingBottom: 4 }}>
+              <Text style={{ fontFamily: theme.displayFont, fontWeight: '500', fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: theme.accent, marginBottom: 8 }}>
+                {series.demo} · {series.status}
+              </Text>
+              <Text style={{ fontFamily: theme.displayFont, fontWeight: '700', fontSize: 22, lineHeight: 24, letterSpacing: -0.4, color: theme.colors.text }}>
+                {series.title}
+              </Text>
+              <Text style={{ fontFamily: theme.bodyFont, fontSize: 11.5, fontWeight: '500', color: theme.colors.text2, marginTop: 6 }}>
+                {series.author} · {series.year}
+              </Text>
+              <View style={{ marginTop: 8 }}>
+                <Stars value={series.rating} count={series.ratings} size={11} />
+              </View>
             </View>
           </View>
         </View>
-        <View style={styles.mobileHeaderRow}>
-          <CoverImage title={series.title} file={series.coverFile} label="cover.jpg" style={{ width: 110, height: 156 }} />
-          <View style={{ flex: 1, minWidth: 0, paddingBottom: 4 }}>
-            <Text style={{ fontFamily: theme.displayFont, fontWeight: '500', fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: theme.accent, marginBottom: 8 }}>
-              {series.demo} · {series.status}
-            </Text>
-            <Text style={{ fontFamily: theme.displayFont, fontWeight: '700', fontSize: 22, lineHeight: 24, letterSpacing: -0.4, color: theme.colors.text }}>
-              {series.title}
-            </Text>
-            <Text style={{ fontFamily: theme.bodyFont, fontSize: 11.5, fontWeight: '500', color: theme.colors.text2, marginTop: 6 }}>
-              {series.author} · {series.year}
-            </Text>
-            <View style={{ marginTop: 8 }}>
-              <Stars value={series.rating} count={series.ratings} size={11} />
-            </View>
-          </View>
-        </View>
-      </View>
-
-      <View style={{ flexDirection: 'row', gap: 8, padding: 16 }}>
-        <Pressable
-          style={{ flex: 1, backgroundColor: theme.accent, paddingVertical: 12, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-          onPress={() => router.push(`/reader/${series.id}-${latestChapter}`)}
-        >
-          <Icon name="play" size={13} color="#fff" />
-          <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 13, color: '#fff' }}>Read Chapter {latestChapter}</Text>
-        </Pressable>
-        <SecondaryBtn icon="bookmark" />
-        <SecondaryBtn icon="download" />
-      </View>
-
-      <View style={{ paddingHorizontal: 16, paddingBottom: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        {series.tags.map((t) => (
-          <Tag key={t} size="sm">
-            {t}
-          </Tag>
-        ))}
-      </View>
-
-      <View style={{ paddingHorizontal: 16, paddingBottom: 20 }}>
-        <Text style={{ fontFamily: theme.bodyFont, fontSize: 13, lineHeight: 20, color: theme.colors.text2 }} numberOfLines={3}>
-          {synopsis}
-        </Text>
-      </View>
-
-      <View style={[styles.tabBar, { borderBottomColor: theme.colors.border, paddingHorizontal: 16 }]}>
-        {tabs.map((t) => (
-          <Pressable key={t.key} onPress={() => setTab(t.key)} style={[styles.tab, { borderBottomColor: tab === t.key ? theme.accent : 'transparent' }]}>
-            <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 13, color: tab === t.key ? theme.colors.text : theme.colors.text3 }}>
-              {t.label}
-            </Text>
+  
+        <View style={{ flexDirection: 'row', gap: 8, padding: 16 }}>
+          <Pressable
+            style={{ flex: 1, backgroundColor: theme.accent, paddingVertical: 12, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+            onPress={() => router.push(`/reader/${series.id}-${latestChapter}`)}
+          >
+            <Icon name="play" size={13} color="#fff" />
+            <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 13, color: '#fff' }}>Read Chapter {latestChapter}</Text>
           </Pressable>
-        ))}
-      </View>
-
-      <View style={{ paddingHorizontal: 16, paddingBottom: 32 }}>
-        <TabContent />
-      </View>
-    </ScrollView>
+          <SecondaryBtn icon="bookmark" />
+          <SecondaryBtn icon="download" onPress={downloadAll} />
+        </View>
+  
+        <View style={{ paddingHorizontal: 16, paddingBottom: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {series.tags.map((t) => (
+            <Tag key={t} size="sm">
+              {t}
+            </Tag>
+          ))}
+        </View>
+  
+        <View style={{ paddingHorizontal: 16, paddingBottom: 20 }}>
+          <Text style={{ fontFamily: theme.bodyFont, fontSize: 13, lineHeight: 20, color: theme.colors.text2 }} numberOfLines={3}>
+            {synopsis}
+          </Text>
+        </View>
+  
+        <View style={[styles.tabBar, { borderBottomColor: theme.colors.border, paddingHorizontal: 16 }]}>
+          {tabs.map((t) => (
+            <Pressable key={t.key} onPress={() => setTab(t.key)} style={[styles.tab, { borderBottomColor: tab === t.key ? theme.accent : 'transparent' }]}>
+              <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 13, color: tab === t.key ? theme.colors.text : theme.colors.text3 }}>
+                {t.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+  
+        <View style={{ paddingHorizontal: 16, paddingBottom: 32 }}>
+          <TabContent />
+        </View>
+      </ScrollView>
+      <Notice />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  notice: { position: 'absolute', left: 16, right: 16, alignItems: 'center' },
   tabBar: { flexDirection: 'row', gap: 24, borderBottomWidth: 1, marginBottom: 28 },
   tab: { paddingVertical: 12, borderBottomWidth: 2, marginBottom: -1 },
   mobileTopIcons: { position: 'absolute', left: 8, right: 8, flexDirection: 'row', justifyContent: 'space-between' },

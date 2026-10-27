@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { fetchChapterPages } from '@/data/pageRepository';
+import { fetchChapterPages, type ReaderPage } from '@/data/pageRepository';
 import * as storage from './storage';
 import { DEFAULT_RULES, DownloadEntry, DownloadRules } from './types';
 
@@ -14,7 +14,7 @@ const RULES_KEY = 'mangax.download-rules.v1';
  * the fetcher has mirrored ('available') can be downloaded; for anything else
  * the reason is returned for the caller to show.
  */
-async function fetchPageUrls(seriesId: number, chapterNumber: number): Promise<{ urls: string[] } | { reason: string }> {
+async function fetchPageUrls(seriesId: number, chapterNumber: number): Promise<{ pages: ReaderPage[] } | { reason: string }> {
   let result;
   try {
     result = await fetchChapterPages(seriesId, chapterNumber);
@@ -24,7 +24,7 @@ async function fetchPageUrls(seriesId: number, chapterNumber: number): Promise<{
   if (!result) return { reason: 'Downloads need a connection to the MangaX catalog.' };
   switch (result.status) {
     case 'available':
-      return { urls: [...result.pages].sort((a, b) => a.index - b.index).map((p) => p.url) };
+      return { pages: [...result.pages].sort((a, b) => a.index - b.index) };
     case 'ingesting':
       return { reason: 'This chapter is still being prepared. Try again in a minute.' };
     case 'unavailable':
@@ -36,12 +36,16 @@ async function fetchPageUrls(seriesId: number, chapterNumber: number): Promise<{
 export function useDownloads() {
   const [entries, setEntries] = useState<DownloadEntry[]>([]);
   const [usage, setUsage] = useState(0);
+  // Read by enqueue, so chapters queued back to back (Download all) check the
+  // budget against what earlier ones wrote, not a stale render.
+  const usageRef = useRef(0);
   const [rules, setRules] = useState<DownloadRules>(DEFAULT_RULES);
   const [ready, setReady] = useState(false);
 
   const refresh = useCallback(async () => {
     const [list, bytes] = await Promise.all([storage.listEntries(), storage.diskUsage()]);
     setEntries(list);
+    usageRef.current = bytes;
     setUsage(bytes);
   }, []);
 
@@ -78,9 +82,10 @@ export function useDownloads() {
       if (!storage.isSupported) return 'Downloads are only available in the iOS and Android apps.';
 
       const id = `${seriesId}-${chapterNumber}`;
-      const pages = await fetchPageUrls(seriesId, chapterNumber);
-      if ('reason' in pages) return pages.reason;
-      const { urls } = pages;
+      const fetched = await fetchPageUrls(seriesId, chapterNumber);
+      if ('reason' in fetched) return fetched.reason;
+      const { pages } = fetched;
+      const urls = pages.map((p) => p.url);
       if (urls.length === 0) return 'This chapter has no pages to download.';
 
       const base: DownloadEntry = {
@@ -100,7 +105,7 @@ export function useDownloads() {
 
       let bytes = 0;
       for (let i = 0; i < urls.length; i++) {
-        if (usage + bytes >= rules.budgetBytes) {
+        if (usageRef.current + bytes >= rules.budgetBytes) {
           await storage.upsertEntry({ ...base, state: 'error', error: 'Storage budget reached', bytes, pagesDone: i, updatedAt: Date.now() });
           await refresh();
           return 'Storage budget reached — free up space or raise the limit.';
@@ -130,11 +135,13 @@ export function useDownloads() {
         if (i % 3 === 0) await refresh();
       }
 
+      // Page i is saved as file i, so the manifest is positional.
+      await storage.writeManifest(id, pages.map((p, i) => ({ index: i, width: p.width, height: p.height })));
       await storage.upsertEntry({ ...base, state: 'done', bytes, pagesDone: urls.length, progress: 1, updatedAt: Date.now() });
       await refresh();
       return null;
     },
-    [refresh, rules.budgetBytes, usage]
+    [refresh, rules.budgetBytes]
   );
 
   const remove = useCallback(

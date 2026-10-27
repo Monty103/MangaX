@@ -7,6 +7,12 @@ export interface ChapterRow {
   number: number;
   publishedAt: string;
   pageCount: number;
+  /**
+   * The fetcher's state for this chapter as of the last catalogue sync;
+   * 'available' means its pages can be read and downloaded. null for the
+   * demo titles and the offline fallback list, which have no pages.
+   */
+  fetcherStatus: string | null;
 }
 
 export async function fetchSeriesById(id: number): Promise<Series | undefined> {
@@ -50,7 +56,7 @@ export async function fetchChapters(seriesId: number): Promise<ChapterRow[]> {
     try {
       const { data, error } = await supabase
         .from('chapters')
-        .select('id, number, published_at, page_count')
+        .select('id, number, published_at, page_count, fetcher_status')
         .eq('series_id', seriesId)
         .order('number', { ascending: false });
 
@@ -60,6 +66,7 @@ export async function fetchChapters(seriesId: number): Promise<ChapterRow[]> {
           number: Number(row.number),
           publishedAt: row.published_at,
           pageCount: row.page_count,
+          fetcherStatus: row.fetcher_status ?? null,
         }));
       }
     } catch (err) {
@@ -75,5 +82,6 @@ export async function fetchChapters(seriesId: number): Promise<ChapterRow[]> {
     number: total - i,
     publishedAt: new Date(Date.now() - i * 1000 * 60 * 60 * 24 * 7).toISOString(),
     pageCount: 20 + ((total - i) % 15),
+    fetcherStatus: null,
   }));
 }

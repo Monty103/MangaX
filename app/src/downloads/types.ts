@@ -17,6 +17,18 @@ export interface DownloadEntry {
   updatedAt: number;
 }
 
+/** One downloaded page as recorded in the chapter's manifest. */
+export interface LocalPageInfo {
+  index: number;
+  width: number | null;
+  height: number | null;
+}
+
+/** A downloaded page ready for the reader; `url` is a local file URI. */
+export interface LocalPage extends LocalPageInfo {
+  url: string;
+}
+
 export interface StorageUsage {
   /** Bytes used by downloaded chapter files. */
   chapters: number;

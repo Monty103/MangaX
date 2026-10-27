@@ -113,6 +113,9 @@ export default function ReaderScreen() {
   // Preloaded so seamless continue and the Next button show pages at once.
   const upcoming = useChapterPages(parsed.seriesId, nextChapter);
 
+  // Reading a downloaded copy: the ad cadence rules show no ads.
+  const isDownloaded = current.state.status === 'available' && current.state.offline === true;
+
   const viewportHeight = viewportH.current || height;
   const pages = useMemo(() => layoutPages(current.state, chapter), [current.state, chapter]);
   const pageCount = pages?.length ?? 0;
@@ -278,7 +281,7 @@ export default function ReaderScreen() {
                   pageIndex: i,
                   premium,
                   chaptersRead,
-                  isDownloaded: false,
+                  isDownloaded,
                   lastAdAt: 0,
                 }) && <InlineReaderAd />}
               </View>
@@ -288,7 +291,7 @@ export default function ReaderScreen() {
 
         {/* Chapter-break slot: the highest-value placement, at a natural
             pause, and inside the seam so seamless-continue still works. */}
-        {pages != null && shouldShowChapterBreakAd({ premium, chaptersRead, isDownloaded: false }) && <ChapterBreakAd />}
+        {pages != null && shouldShowChapterBreakAd({ premium, chaptersRead, isDownloaded }) && <ChapterBreakAd />}
 
         <View onLayout={(e) => (seamY.current = e.nativeEvent.layout.y)}>
           <ChapterSeam
