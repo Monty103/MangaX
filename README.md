@@ -47,27 +47,31 @@ Change the schema by adding a new migration, never by editing an applied one.
 Downloaded chapter images are intentionally not modeled in Postgres: they
 live on-device (expo-file-system) with a local SQLite index and never sync.
 
-### Deploying the website (Cloudflare Pages)
+### Deploying the website (Cloudflare)
+
+Live at https://mangax.davidmy103.workers.dev (a Cloudflare Worker serving
+static assets, connected to this repo's `main`).
 
 `npm run build:web` (`expo export -p web`) writes a static site to `app/dist`.
 Every page in it is the same app shell and the router draws the screen from
-the URL, so no rewrite rules are needed: Pages serves `index.html` for paths
-without a file (there is deliberately no top-level `404.html`), and unknown
-paths show the app's own "not found" screen.
+the URL, so paths without a file (`/series/13`, `/reader/13-3`) must still
+get the app: `app/wrangler.jsonc` sets `not_found_handling` to
+`single-page-application`. Unknown paths show the app's own "not found"
+screen. The Worker's name in the dashboard must stay `mangax` to match it.
 
-Pages project settings (Git integration):
+Build settings:
 
 | Setting | Value |
 |---|---|
 | Production branch | `main` |
 | Root directory | `app` |
 | Build command | `npm run build:web` |
-| Build output directory | `dist` |
 | Variables | `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` (as in `.env.example`), `NODE_VERSION=22` |
 
-After the first deploy, add the site's URL in Supabase → Authentication →
-URL Configuration (Site URL and Redirect URLs), so sign-up and password
-emails link back to the live site instead of localhost.
+Supabase → Authentication → URL Configuration: Site URL is the address above;
+Redirect URLs include `https://mangax.davidmy103.workers.dev/**` (social
+sign-in returns to `/auth/callback`) and, for development,
+`http://localhost:8081/**`.
 
 ---
 

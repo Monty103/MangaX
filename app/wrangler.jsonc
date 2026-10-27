@@ -1,0 +1,13 @@
+// Cloudflare Worker that serves the static web build (npm run build:web).
+// Every exported page is the same app shell and the router draws the screen
+// from the URL, so paths without a file (/series/13, /reader/13-3) must get
+// index.html rather than a 404: that is what single-page-application does.
+// Unknown paths then show the app's own "not found" screen.
+{
+  "name": "mangax",
+  "compatibility_date": "2026-10-27",
+  "assets": {
+    "directory": "./dist/",
+    "not_found_handling": "single-page-application"
+  }
+}
