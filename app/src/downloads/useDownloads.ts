@@ -1,31 +1,35 @@
 import { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { fetchChapterPages } from '@/data/pageRepository';
 import * as storage from './storage';
 import { DEFAULT_RULES, DownloadEntry, DownloadRules } from './types';
 
 const RULES_KEY = 'mangax.download-rules.v1';
 
-/** Page image URLs for a chapter, from the catalog. */
-async function fetchPageUrls(seriesId: number, chapterNumber: number): Promise<string[]> {
-  if (!isSupabaseConfigured) return [];
+/**
+ * Page image URLs for a chapter, via the chapter-pages Edge Function (the
+ * same source the reader uses). The URLs are signed and expire after about an
+ * hour, which is fine because the download starts right away. Only chapters
+ * the fetcher has mirrored ('available') can be downloaded; for anything else
+ * the reason is returned for the caller to show.
+ */
+async function fetchPageUrls(seriesId: number, chapterNumber: number): Promise<{ urls: string[] } | { reason: string }> {
+  let result;
   try {
-    const { data: ch } = await supabase
-      .from('chapters')
-      .select('id')
-      .eq('series_id', seriesId)
-      .eq('number', chapterNumber)
-      .maybeSingle();
-    if (!ch) return [];
-    const { data: pages } = await supabase
-      .from('chapter_pages')
-      .select('image_url, page_index')
-      .eq('chapter_id', ch.id)
-      .order('page_index', { ascending: true });
-    return (pages ?? []).map((p) => p.image_url).filter(Boolean);
+    result = await fetchChapterPages(seriesId, chapterNumber);
   } catch {
-    return [];
+    return { reason: 'Couldn’t reach MangaX. Check your connection and try again.' };
+  }
+  if (!result) return { reason: 'Downloads need a connection to the MangaX catalog.' };
+  switch (result.status) {
+    case 'available':
+      return { urls: [...result.pages].sort((a, b) => a.index - b.index).map((p) => p.url) };
+    case 'ingesting':
+      return { reason: 'This chapter is still being prepared. Try again in a minute.' };
+    case 'unavailable':
+      // Already worded for readers by the function.
+      return { reason: result.reason };
   }
 }
 
@@ -74,10 +78,10 @@ export function useDownloads() {
       if (!storage.isSupported) return 'Downloads are only available in the iOS and Android apps.';
 
       const id = `${seriesId}-${chapterNumber}`;
-      const urls = await fetchPageUrls(seriesId, chapterNumber);
-      if (urls.length === 0) {
-        return 'This chapter has no page images in the catalog yet, so there is nothing to download.';
-      }
+      const pages = await fetchPageUrls(seriesId, chapterNumber);
+      if ('reason' in pages) return pages.reason;
+      const { urls } = pages;
+      if (urls.length === 0) return 'This chapter has no pages to download.';
 
       const base: DownloadEntry = {
         id,
