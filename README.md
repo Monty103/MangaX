@@ -37,14 +37,37 @@ named with the version Supabase recorded when it was applied to the live
 project. To set up a fresh project, apply them in filename order (SQL editor,
 or `supabase db push` once the CLI is linked). They create profiles, the
 catalog (series / chapters / pages), per-user library and reading progress,
-and ratings/comments — all with RLS keyed to `auth.uid()` — then seed 12 demo
-titles and link the catalog to manga_fetcher (`fetcher_*` columns,
-`sync_state`).
+and ratings/comments — all with RLS keyed to `auth.uid()` — seed 12 demo
+titles, link the catalog to manga_fetcher (`fetcher_*` columns,
+`sync_state`), schedule the catalogue sync, and finally delete the demo
+titles again.
 
 Change the schema by adding a new migration, never by editing an applied one.
 
 Downloaded chapter images are intentionally not modeled in Postgres: they
 live on-device (expo-file-system) with a local SQLite index and never sync.
+
+### Deploying the website (Cloudflare Pages)
+
+`npm run build:web` (`expo export -p web`) writes a static site to `app/dist`.
+Every page in it is the same app shell and the router draws the screen from
+the URL, so no rewrite rules are needed: Pages serves `index.html` for paths
+without a file (there is deliberately no top-level `404.html`), and unknown
+paths show the app's own "not found" screen.
+
+Pages project settings (Git integration):
+
+| Setting | Value |
+|---|---|
+| Production branch | `main` |
+| Root directory | `app` |
+| Build command | `npm run build:web` |
+| Build output directory | `dist` |
+| Variables | `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` (as in `.env.example`), `NODE_VERSION=22` |
+
+After the first deploy, add the site's URL in Supabase → Authentication →
+URL Configuration (Site URL and Redirect URLs), so sign-up and password
+emails link back to the live site instead of localhost.
 
 ---
 
