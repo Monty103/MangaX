@@ -7,14 +7,21 @@ import { CoverImage } from '@/components/ui/CoverImage';
 import { Stars } from '@/components/ui/Stars';
 import { Icon } from '@/components/ui/Icon';
 import { useMangaTheme } from '@/theme/ThemeProvider';
-import type { Series } from '@/data/types';
+import type { HomeSeries } from '@/data/homeRepository';
+
+// "New chapter" only when the newest readable chapter is this recent.
+const NEW_CHAPTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Ported from desktop-frames.jsx `Hero` (wide banner, left-aligned copy over
 // a horizontal scrim) and mobile-frames.jsx's phone hero card (shorter,
 // bottom-aligned copy over a vertical scrim).
-export function HomeHero({ series, isDesktop }: { series: Series; isDesktop: boolean }) {
+export function HomeHero({ series, isDesktop }: { series: HomeSeries; isDesktop: boolean }) {
   const { theme } = useMangaTheme();
   const router = useRouter();
+  const chapter = series.latestChapter;
+  const isNew = series.latestChapterAt != null && Date.now() - Date.parse(series.latestChapterAt) < NEW_CHAPTER_MS;
+  const openSeries = () => router.push(`/series/${series.id}`);
+  const readLatest = () => (chapter != null ? router.push(`/reader/${series.id}-${chapter}`) : openSeries());
 
   return (
     <View
@@ -45,7 +52,7 @@ export function HomeHero({ series, isDesktop }: { series: Series; isDesktop: boo
         ]}
       >
         <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 10, letterSpacing: 2, color: theme.accent, textTransform: 'uppercase', marginBottom: isDesktop ? 14 : 8 }}>
-          Featured · New chapter
+          {isNew ? 'Featured · New chapter' : 'Featured'}
         </Text>
         <Text
           style={{
@@ -65,27 +72,28 @@ export function HomeHero({ series, isDesktop }: { series: Series; isDesktop: boo
             <View style={styles.dot} />
             <Stars value={series.rating} count={series.ratings} />
             <View style={styles.dot} />
-            <Text style={{ fontFamily: theme.bodyFont, fontSize: 12, fontWeight: '500', color: theme.colors.text2 }}>Ch. {series.chapters}</Text>
+            {chapter != null && (
+              <Text style={{ fontFamily: theme.bodyFont, fontSize: 12, fontWeight: '500', color: theme.colors.text2 }}>Ch. {chapter}</Text>
+            )}
           </View>
         ) : (
           <Text style={{ fontFamily: theme.bodyFont, fontSize: 11, fontWeight: '500', color: theme.colors.text2 }}>
-            {series.author} · Ch. {series.chapters} · {series.rating.toFixed(1)} ★
+            {[series.author, chapter != null ? `Ch. ${chapter}` : null, `${series.rating.toFixed(1)} ★`].filter(Boolean).join(' · ')}
           </Text>
         )}
-        {isDesktop && (
-          <Text style={{ fontFamily: theme.bodyFont, fontSize: 13.5, lineHeight: 21, color: theme.colors.text2, maxWidth: 440 }}>
-            A blacksmith&rsquo;s daughter in a city of clockwork courts inherits a lantern that summons the dead — and the
-            debts that come with them.
+        {isDesktop && series.description ? (
+          <Text numberOfLines={3} style={{ fontFamily: theme.bodyFont, fontSize: 13.5, lineHeight: 21, color: theme.colors.text2, maxWidth: 440 }}>
+            {series.description}
           </Text>
-        )}
+        ) : null}
         <View style={{ flexDirection: 'row', gap: 8, marginTop: isDesktop ? 4 : 14 }}>
           <Pressable
             style={[styles.primaryBtn, { backgroundColor: theme.accent, flex: isDesktop ? undefined : 1 }]}
-            onPress={() => router.push(`/series/${series.id}`)}
+            onPress={readLatest}
           >
             <Icon name="play" size={13} color="#fff" />
             <Text style={{ fontFamily: theme.displayFont, fontWeight: '600', fontSize: 13, color: '#fff' }}>
-              Read Chapter {series.chapters}
+              {chapter != null ? `Read Chapter ${chapter}` : 'Open series'}
             </Text>
           </Pressable>
           <Pressable style={[styles.secondaryBtn, { borderColor: theme.colors.borderStrong, width: isDesktop ? undefined : 44 }]}>
