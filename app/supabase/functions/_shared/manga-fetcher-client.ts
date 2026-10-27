@@ -1,5 +1,5 @@
 // Copied verbatim from manga_fetcher client/manga-fetcher-client.ts
-// (fetcher repo commit 93d62ed). Do not edit here: change it in the fetcher
+// (fetcher repo commit f939437). Do not edit here: change it in the fetcher
 // and copy it again. Contract v1 only ever adds fields, so this copy stays
 // valid until the fetcher ships /v2.
 
@@ -50,6 +50,8 @@ export interface SeriesSummary {
   genres: string[];
   tags: string[];
   coverUrl: string | null;
+  /** Permanent cover URL, safe to store; null when unavailable. */
+  coverPublicUrl: string | null;
   chapterCount: number;
   availableCount: number;
   lastChapterAt: string | null;

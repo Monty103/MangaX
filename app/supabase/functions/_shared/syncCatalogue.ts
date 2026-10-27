@@ -100,8 +100,9 @@ export async function syncCatalogue({ fetcher, db, full = false, log = () => {} 
 async function syncSeries(fetcher: MangaFetcherClient, db: ServiceDb, slug: string) {
   const series = await fetcher.getSeries(slug);
 
-  // Upsert on the fetcher id. Website-only fields (demographic, rating,
-  // cover_file) are never written here, so hand edits survive re-syncs.
+  // Upsert on the fetcher id. Website-only fields (demographic, rating) are
+  // never written here, so hand edits survive re-syncs. cover_file is
+  // written only when the fetcher has a permanent cover URL.
   const row = await must(
     db
       .from('series')
@@ -161,6 +162,8 @@ function seriesRow(series: FetcherSeries) {
     status: STATUS[series.status] ?? 'Ongoing',
     year: series.year,
     description: series.description,
+    // coverUrl is signed and expires, so only the public one is stored.
+    ...(series.coverPublicUrl ? { cover_file: series.coverPublicUrl } : {}),
   };
 }
 
